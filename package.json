@@ -1,0 +1,61 @@
+{
+  "name": "@statiolake/coc-diffview",
+  "version": "0.0.0-development",
+  "description": "Git diff and file-history views for coc.nvim",
+  "author": "statiolake",
+  "license": "MIT",
+  "main": "lib/index.js",
+  "engines": {
+    "coc": "^0.0.82"
+  },
+  "extensionDependencies": [
+    "@statiolake/coc-ui",
+    "@statiolake/coc-git"
+  ],
+  "activationEvents": [
+    "*"
+  ],
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "prepare": "node esbuild.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "coc-diffview.open",
+        "title": "Show Working Tree Diff"
+      },
+      {
+        "command": "coc-diffview.branch",
+        "title": "Show Branch Diff"
+      },
+      {
+        "command": "coc-diffview.fileHistory",
+        "title": "Show File History"
+      },
+      {
+        "command": "coc-diffview.showCommit",
+        "title": "Show Commit Diff"
+      },
+      {
+        "command": "coc-diffview.openFile",
+        "title": "Open File Diff"
+      },
+      {
+        "command": "coc-diffview.close",
+        "title": "Close File Diff"
+      }
+    ]
+  },
+  "dependencies": {
+    "@statiolake/coc-git": "file:../coc-git",
+    "@statiolake/coc-ui": "file:../coc-ui"
+  },
+  "devDependencies": {
+    "@types/node": "^16.18.0",
+    "coc.nvim": "^0.0.83-next.24",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.3.3"
+  }
+}
