@@ -48,14 +48,20 @@
       }
     ]
   },
-  "dependencies": {
-    "@statiolake/coc-git": "file:../coc-git",
-    "@statiolake/coc-ui": "file:../coc-ui"
-  },
   "devDependencies": {
+    "@statiolake/coc-git": "git+https://github.com/statiolake/coc-git.git",
+    "@statiolake/coc-ui": "git+https://github.com/statiolake/coc-ui.git",
     "@types/node": "^16.18.0",
     "coc.nvim": "^0.0.83-next.24",
     "esbuild": "^0.25.0",
     "typescript": "^5.3.3"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/statiolake/coc-diffview.git"
+  },
+  "bugs": {
+    "url": "https://github.com/statiolake/coc-diffview/issues"
+  },
+  "homepage": "https://github.com/statiolake/coc-diffview#readme"
 }
