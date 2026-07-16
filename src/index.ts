@@ -96,24 +96,35 @@ class Diffview {
     const container = ui.registerViewContainer({
       id: "diff",
       title: "Diff",
+      icon: "",
       location: "panel",
+      order: 1,
     });
-    const filesTree = ui.createTreeView({
+    const filesView = ui.registerView({
       id: "diff.files",
       containerId: "diff",
-      title: "Files",
+      name: "Files",
+      order: 1,
+    });
+    const filesTree = ui.createTreeView("diff.files", {
       treeDataProvider: this.files,
     });
-    const historyTree = ui.createTreeView({
+    const historyView = ui.registerView({
       id: "diff.fileHistory",
       containerId: "diff",
-      title: "File History",
+      name: "File History",
+      order: 2,
+      visibility: "collapsed",
+    });
+    const historyTree = ui.createTreeView("diff.fileHistory", {
       treeDataProvider: this.history,
     });
 
     context.subscriptions.push(
       container,
+      filesView,
       filesTree,
+      historyView,
       historyTree,
       commands.registerCommand("coc-diffview.open", () =>
         this.openWorkingTree(),
