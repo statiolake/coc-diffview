@@ -1,6 +1,6 @@
 {
   "name": "@statiolake/coc-diffview",
-  "version": "0.0.0-development",
+  "version": "0.1.0",
   "description": "Git diff and file-history views for coc.nvim",
   "author": "statiolake",
   "license": "MIT",
@@ -63,5 +63,11 @@
   "bugs": {
     "url": "https://github.com/statiolake/coc-diffview/issues"
   },
-  "homepage": "https://github.com/statiolake/coc-diffview#readme"
+  "homepage": "https://github.com/statiolake/coc-diffview#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "lib/index.js"
+  ]
 }
