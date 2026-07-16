@@ -18,6 +18,7 @@
   "scripts": {
     "build": "node esbuild.mjs",
     "prepare": "node esbuild.mjs",
+    "test": "node --no-warnings --experimental-strip-types --test src/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "contributes": {
@@ -43,10 +44,34 @@
         "title": "Open File Diff"
       },
       {
+        "command": "coc-diffview.openFileChange",
+        "title": "Open File Change"
+      },
+      {
+        "command": "coc-diffview.openFileUnified",
+        "title": "Open Unified File Diff"
+      },
+      {
+        "command": "coc-diffview.openFileSplit",
+        "title": "Open Split File Diff"
+      },
+      {
         "command": "coc-diffview.close",
         "title": "Close File Diff"
       }
-    ]
+    ],
+    "configuration": {
+      "type": "object",
+      "title": "Coc Diffview",
+      "properties": {
+        "coc-diffview.layout": {
+          "type": "string",
+          "enum": ["unified", "split"],
+          "default": "unified",
+          "description": "Default file diff layout."
+        }
+      }
+    }
   },
   "devDependencies": {
     "@statiolake/coc-git": "git+https://github.com/statiolake/coc-git.git",

@@ -2,8 +2,10 @@ import path from "node:path";
 import { promises as fs } from "node:fs";
 import {
   commands,
+  Disposable,
   Event,
   Emitter,
+  events,
   ExtensionContext,
   extensions,
   TreeDataProvider,
@@ -15,19 +17,35 @@ import {
 } from "coc.nvim";
 import type { CocGitApi, GitCommit } from "@statiolake/coc-git";
 import type { CocUiApi } from "@statiolake/coc-ui";
+import { lineChanges } from "./lineDiff";
+
+type DiffRef = "WORKTREE" | string;
 
 type DiffFile = {
   root: string;
   path: string;
+  basePath: string;
   status: string;
-  base: string;
-  target: string;
+  base: DiffRef;
+  target: DiffRef;
 };
 
-type DiffSession = {
+type SplitSession = {
+  kind: "split";
   leftWindow: number;
   rightWindow: number;
 };
+
+type UnifiedSession = {
+  kind: "unified";
+  window: number;
+  buffer: number;
+  namespace: number;
+  baseLines: string[];
+  refreshTimer?: NodeJS.Timeout;
+};
+
+type DiffSession = SplitSession | UnifiedSession;
 
 class DiffFilesProvider implements TreeDataProvider<DiffFile> {
   private readonly changeEmitter = new Emitter<void>();
@@ -83,7 +101,7 @@ class FileHistoryProvider implements TreeDataProvider<GitCommit> {
   }
 }
 
-class Diffview {
+class Diffview implements Disposable {
   private readonly files = new DiffFilesProvider();
   private readonly history = new FileHistoryProvider();
   private session: DiffSession | undefined;
@@ -121,6 +139,7 @@ class Diffview {
     });
 
     context.subscriptions.push(
+      this,
       container,
       filesView,
       filesTree,
@@ -140,8 +159,31 @@ class Diffview {
       commands.registerCommand("coc-diffview.openFile", (file: DiffFile) =>
         this.openFile(file),
       ),
+      commands.registerCommand(
+        "coc-diffview.openFileChange",
+        (root: string, relative: string, base = "HEAD", target = "WORKTREE") =>
+          this.openFile(createDiffFile(root, relative, base, target)),
+      ),
+      commands.registerCommand(
+        "coc-diffview.openFileUnified",
+        (root: string, relative: string, base = "HEAD", target = "WORKTREE") =>
+          this.openUnified(createDiffFile(root, relative, base, target)),
+      ),
+      commands.registerCommand(
+        "coc-diffview.openFileSplit",
+        (root: string, relative: string, base = "HEAD", target = "WORKTREE") =>
+          this.openSplit(createDiffFile(root, relative, base, target)),
+      ),
       commands.registerCommand("coc-diffview.close", () => this.close()),
+      events.on("TextChanged", (bufnr) => this.scheduleRender(bufnr)),
+      events.on("TextChangedI", (bufnr) => this.scheduleRender(bufnr)),
+      events.on("TextChangedP", (bufnr) => this.scheduleRender(bufnr)),
     );
+  }
+
+  dispose(): void {
+    if (this.session?.kind === "unified" && this.session.refreshTimer)
+      clearTimeout(this.session.refreshTimer);
   }
 
   private async openWorkingTree(): Promise<void> {
@@ -173,14 +215,13 @@ class Diffview {
   }
 
   private async openCommit(root: string, hash: string): Promise<void> {
-    const parent = `${hash}^`;
-    await this.showFiles(root, parent, hash);
+    await this.showFiles(root, `${hash}^`, hash);
   }
 
   private async showFiles(
     root: string,
-    base: string,
-    target: string,
+    base: DiffRef,
+    target: DiffRef,
   ): Promise<void> {
     const args =
       target === "WORKTREE"
@@ -192,85 +233,193 @@ class Diffview {
   }
 
   private async openFile(file: DiffFile): Promise<void> {
+    const layout = workspace
+      .getConfiguration("coc-diffview")
+      .get<"unified" | "split">("layout", "unified");
+    if (layout === "split") await this.openSplit(file);
+    else await this.openUnified(file);
+  }
+
+  private async openUnified(file: DiffFile): Promise<void> {
     await this.close();
-    const relative = file.path;
-    const left = await this.fileContents(file.root, file.base, relative);
-    const right = await this.fileContents(file.root, file.target, relative);
+    const base = splitLines(
+      await this.fileContents(file.root, file.base, file.basePath),
+    );
+    const target = await this.fileContents(file.root, file.target, file.path);
+    const editor = await this.editorWindow();
+    if (!editor) return;
+    await workspace.nvim.call("win_gotoid", [editor]);
+    const buffer = await this.openTarget(file, target);
+    const windowId = (await workspace.nvim.call("win_getid")) as number;
+    const namespace = (await workspace.nvim.call("nvim_create_namespace", [
+      "coc-diffview-unified",
+    ])) as number;
+    this.session = {
+      kind: "unified",
+      window: windowId,
+      buffer,
+      namespace,
+      baseLines: base,
+    };
+    await this.renderUnified(this.session);
+  }
+
+  private async openSplit(file: DiffFile): Promise<void> {
+    await this.close();
+    const left = await this.fileContents(file.root, file.base, file.basePath);
+    const right = await this.fileContents(file.root, file.target, file.path);
     const editor = await this.editorWindow();
     if (!editor) return;
 
     await workspace.nvim.call("win_gotoid", [editor]);
-    await this.ui.openLocation(
-      Uri.file(path.join(file.root, relative)).toString(),
-      0,
-      0,
-    );
+    await this.openTarget(file, right);
     const rightWindow = (await workspace.nvim.call("win_getid")) as number;
     await workspace.nvim.command("leftabove vsplit");
     const leftWindow = (await workspace.nvim.call("win_getid")) as number;
-    const leftBuffer = (await workspace.nvim.call("nvim_create_buf", [
+    const leftBuffer = await this.scratchBuffer(file.base, file.basePath, left);
+    await workspace.nvim.call("nvim_win_set_buf", [leftWindow, leftBuffer]);
+    await workspace.nvim.command(
+      "setlocal buftype=nofile bufhidden=wipe noswapfile nomodifiable",
+    );
+    await workspace.nvim.command("diffthis");
+    await workspace.nvim.command("setlocal scrollbind cursorbind");
+
+    await workspace.nvim.call("win_gotoid", [rightWindow]);
+    await workspace.nvim.command("diffthis");
+    await workspace.nvim.command("setlocal scrollbind cursorbind");
+    this.session = { kind: "split", leftWindow, rightWindow };
+  }
+
+  private async openTarget(file: DiffFile, contents: string): Promise<number> {
+    if (file.target === "WORKTREE") {
+      await this.ui.openLocation(
+        Uri.file(path.join(file.root, file.path)).toString(),
+        0,
+        0,
+      );
+      return (await workspace.nvim.call("bufnr", ["%"])) as number;
+    }
+    const buffer = await this.scratchBuffer(file.target, file.path, contents);
+    await workspace.nvim.call("nvim_win_set_buf", [0, buffer]);
+    await workspace.nvim.command("setlocal buftype=nofile bufhidden=wipe noswapfile");
+    return buffer;
+  }
+
+  private async scratchBuffer(
+    ref: DiffRef,
+    relative: string,
+    contents: string,
+  ): Promise<number> {
+    const buffer = (await workspace.nvim.call("nvim_create_buf", [
       false,
       true,
     ])) as number;
     await workspace.nvim.call("nvim_buf_set_name", [
-      leftBuffer,
-      `coc-diffview://${file.base}/${relative}`,
+      buffer,
+      `coc-diffview://${ref}/${relative}`,
     ]);
     await workspace.nvim.call("nvim_buf_set_lines", [
-      leftBuffer,
+      buffer,
       0,
       -1,
       false,
-      left.split("\n"),
+      splitLines(contents),
     ]);
-    await workspace.nvim.call("nvim_win_set_buf", [leftWindow, leftBuffer]);
-    await workspace.nvim.command(
-      "setlocal buftype=nofile bufhidden=wipe noswapfile nomodifiable diff",
-    );
+    await workspace.nvim.call("nvim_buf_set_option", [buffer, "modified", false]);
+    return buffer;
+  }
 
-    if (file.target !== "WORKTREE") {
-      const rightBuffer = (await workspace.nvim.call("nvim_create_buf", [
-        false,
-        true,
-      ])) as number;
-      await workspace.nvim.call("nvim_buf_set_name", [
-        rightBuffer,
-        `coc-diffview://${file.target}/${relative}`,
-      ]);
-      await workspace.nvim.call("nvim_buf_set_lines", [
-        rightBuffer,
-        0,
-        -1,
-        false,
-        right.split("\n"),
-      ]);
-      await workspace.nvim.call("nvim_win_set_buf", [rightWindow, rightBuffer]);
-      await workspace.nvim.call("win_gotoid", [rightWindow]);
-      await workspace.nvim.command(
-        "setlocal buftype=nofile bufhidden=wipe noswapfile nomodifiable",
-      );
+  private scheduleRender(bufnr: number): void {
+    const session = this.session;
+    if (session?.kind !== "unified" || session.buffer !== bufnr) return;
+    if (session.refreshTimer) clearTimeout(session.refreshTimer);
+    session.refreshTimer = setTimeout(() => {
+      session.refreshTimer = undefined;
+      if (this.session === session) void this.renderUnified(session);
+    }, 80);
+  }
+
+  private async renderUnified(session: UnifiedSession): Promise<void> {
+    const valid = (await workspace.nvim.call("nvim_buf_is_valid", [
+      session.buffer,
+    ])) as boolean;
+    if (!valid || this.session !== session) return;
+    const current = (await workspace.nvim.call("nvim_buf_get_lines", [
+      session.buffer,
+      0,
+      -1,
+      false,
+    ])) as string[];
+    await workspace.nvim.call("nvim_buf_clear_namespace", [
+      session.buffer,
+      session.namespace,
+      0,
+      -1,
+    ]);
+    for (const change of lineChanges(session.baseLines, current)) {
+      if (change.removed.length) {
+        const atEnd = change.newStart >= current.length;
+        const row = atEnd ? Math.max(0, current.length - 1) : change.newStart;
+        await workspace.nvim.call("nvim_buf_set_extmark", [
+          session.buffer,
+          session.namespace,
+          row,
+          0,
+          {
+            virt_lines: change.removed.map((line) => [[line, "DiffDelete"]]),
+            virt_lines_above: !atEnd,
+            virt_lines_leftcol: true,
+          },
+        ]);
+      }
+      if (change.added.length) {
+        await workspace.nvim.call("nvim_buf_set_extmark", [
+          session.buffer,
+          session.namespace,
+          change.newStart,
+          0,
+          {
+            end_row: change.newStart + change.added.length,
+            hl_group: change.removed.length ? "DiffChange" : "DiffAdd",
+            hl_eol: true,
+          },
+        ]);
+      }
     }
-    await workspace.nvim.command("setlocal diff");
-
-    this.session = { leftWindow, rightWindow };
   }
 
   private async close(): Promise<void> {
-    if (!this.session) return;
-    const { leftWindow, rightWindow } = this.session;
+    const session = this.session;
+    if (!session) return;
     this.session = undefined;
-    const rightValid = (await workspace.nvim.call("nvim_win_is_valid", [
-      rightWindow,
-    ])) as boolean;
-    if (rightValid) {
-      await workspace.nvim.call("win_gotoid", [rightWindow]);
+    if (session.kind === "unified") {
+      if (session.refreshTimer) clearTimeout(session.refreshTimer);
+      const valid = (await workspace.nvim.call("nvim_buf_is_valid", [
+        session.buffer,
+      ])) as boolean;
+      if (valid)
+        await workspace.nvim.call("nvim_buf_clear_namespace", [
+          session.buffer,
+          session.namespace,
+          0,
+          -1,
+        ]);
+      return;
+    }
+    for (const windowId of [session.leftWindow, session.rightWindow]) {
+      const valid = (await workspace.nvim.call("nvim_win_is_valid", [
+        windowId,
+      ])) as boolean;
+      if (!valid) continue;
+      await workspace.nvim.call("win_gotoid", [windowId]);
       await workspace.nvim.command("diffoff");
+      await workspace.nvim.command("setlocal noscrollbind nocursorbind");
     }
     const leftValid = (await workspace.nvim.call("nvim_win_is_valid", [
-      leftWindow,
+      session.leftWindow,
     ])) as boolean;
     if (leftValid)
-      await workspace.nvim.call("nvim_win_close", [leftWindow, true]);
+      await workspace.nvim.call("nvim_win_close", [session.leftWindow, true]);
   }
 
   private async currentRepository(): Promise<string | undefined> {
@@ -296,14 +445,14 @@ class Diffview {
 
   private async fileContents(
     root: string,
-    ref: string,
+    ref: DiffRef,
     relative: string,
   ): Promise<string> {
     if (ref === "WORKTREE") {
       try {
         return await fs.readFile(path.join(root, relative), "utf8");
       } catch {
-        return await this.git.diff(root, ["show", `HEAD:${relative}`]);
+        return "";
       }
     }
     try {
@@ -329,19 +478,43 @@ class Diffview {
   }
 }
 
+function createDiffFile(
+  root: string,
+  relative: string,
+  base: DiffRef,
+  target: DiffRef,
+): DiffFile {
+  return { root, path: relative, basePath: relative, status: "", base, target };
+}
+
 function parseFiles(
   output: string,
   root: string,
-  base: string,
-  target: string,
+  base: DiffRef,
+  target: DiffRef,
 ): DiffFile[] {
   return output
     .split("\n")
     .filter(Boolean)
     .map((line) => {
       const [status, ...parts] = line.split("\t");
-      return { root, status, path: parts.at(-1) as string, base, target };
+      const renamed = status.startsWith("R") || status.startsWith("C");
+      const filePath = parts.at(-1) as string;
+      return {
+        root,
+        status,
+        path: filePath,
+        basePath: renamed ? parts[0] : filePath,
+        base,
+        target,
+      };
     });
+}
+
+function splitLines(contents: string): string[] {
+  const lines = contents.split("\n");
+  if (lines.at(-1) === "") lines.pop();
+  return lines.length ? lines : [""];
 }
 
 export async function activate(context: ExtensionContext): Promise<void> {
