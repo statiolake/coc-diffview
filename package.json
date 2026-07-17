@@ -1,17 +1,14 @@
 {
   "name": "@statiolake/coc-diffview",
   "version": "0.1.0",
-  "description": "Git diff and file-history views for coc.nvim",
+  "description": "Editable unified and side-by-side diff UI for coc.nvim",
   "author": "statiolake",
   "license": "MIT",
   "main": "lib/index.js",
+  "types": "index.d.ts",
   "engines": {
     "coc": "^0.0.82"
   },
-  "extensionDependencies": [
-    "@statiolake/coc-ui",
-    "@statiolake/coc-git"
-  ],
   "activationEvents": [
     "*"
   ],
@@ -25,35 +22,7 @@
     "commands": [
       {
         "command": "coc-diffview.open",
-        "title": "Show Working Tree Diff"
-      },
-      {
-        "command": "coc-diffview.branch",
-        "title": "Show Branch Diff"
-      },
-      {
-        "command": "coc-diffview.fileHistory",
-        "title": "Show File History"
-      },
-      {
-        "command": "coc-diffview.showCommit",
-        "title": "Show Commit Diff"
-      },
-      {
-        "command": "coc-diffview.openFile",
-        "title": "Open File Diff"
-      },
-      {
-        "command": "coc-diffview.openFileChange",
-        "title": "Open File Change"
-      },
-      {
-        "command": "coc-diffview.openFileUnified",
-        "title": "Open Unified File Diff"
-      },
-      {
-        "command": "coc-diffview.openFileSplit",
-        "title": "Open Split File Diff"
+        "title": "Open Diff"
       },
       {
         "command": "coc-diffview.close",
@@ -74,8 +43,6 @@
     }
   },
   "devDependencies": {
-    "@statiolake/coc-git": "git+https://github.com/statiolake/coc-git.git",
-    "@statiolake/coc-ui": "git+https://github.com/statiolake/coc-ui.git",
     "@types/node": "^16.18.0",
     "coc.nvim": "^0.0.83-next.24",
     "esbuild": "^0.25.0",
@@ -93,6 +60,7 @@
     "access": "public"
   },
   "files": [
+    "index.d.ts",
     "lib/index.js"
   ]
 }
