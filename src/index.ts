@@ -32,12 +32,13 @@ export type OpenDiffOptions = {
 export interface CocDiffviewApi {
   open(options: OpenDiffOptions): Promise<void>;
   close(): Promise<void>;
-  toggle(): Promise<void>;
+  toggle(options?: OpenDiffOptions): Promise<void>;
   toggleLayout(): Promise<void>;
 }
 
 type SessionBase = {
   createdBuffers: number[];
+  options: OpenDiffOptions;
 };
 
 type SplitSession = SessionBase & {
@@ -71,7 +72,9 @@ class Diffview implements CocDiffviewApi, Disposable {
         (options: OpenDiffOptions) => this.open(options),
       ),
       commands.registerCommand("coc-diffview.close", () => this.close()),
-      commands.registerCommand("coc-diffview.toggle", () => this.toggle()),
+      commands.registerCommand("coc-diffview.toggle", (options?: OpenDiffOptions) =>
+        this.toggle(options),
+      ),
       commands.registerCommand("coc-diffview.toggleLayout", () =>
         this.toggleLayout(),
       ),
@@ -138,13 +141,17 @@ class Diffview implements CocDiffviewApi, Disposable {
     }
   }
 
-  async toggle(): Promise<void> {
-    if (this.session) {
+  async toggle(options?: OpenDiffOptions): Promise<void> {
+    if (
+      this.session &&
+      (!options || sameSource(this.session.options.modified, options.modified))
+    ) {
       await this.close();
       return;
     }
-    if (!this.lastOptions) return;
-    await this.open(this.lastOptions);
+    const target = options ?? this.lastOptions;
+    if (!target) return;
+    await this.open(target);
   }
 
   async toggleLayout(): Promise<void> {
@@ -186,6 +193,7 @@ class Diffview implements CocDiffviewApi, Disposable {
       originalLines,
       signColumn,
       createdBuffers,
+      options,
     };
     await this.renderUnified(this.session);
   }
@@ -217,6 +225,7 @@ class Diffview implements CocDiffviewApi, Disposable {
       leftWindow,
       rightWindow,
       createdBuffers,
+      options,
     };
   }
 
@@ -426,6 +435,13 @@ class Diffview implements CocDiffviewApi, Disposable {
 function validateOptions(options: OpenDiffOptions): void {
   if (!options?.original || !options.modified)
     throw new Error("coc-diffview.open requires original and modified sources");
+}
+
+function sameSource(left: DiffSource, right: DiffSource): boolean {
+  if (left.kind !== right.kind) return false;
+  if (left.kind === "buffer" && right.kind === "buffer")
+    return left.buffer === right.buffer;
+  return left.label === right.label;
 }
 
 function removedVirtualLine(

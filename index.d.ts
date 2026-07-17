@@ -23,6 +23,6 @@ export type OpenDiffOptions = {
 export interface CocDiffviewApi {
   open(options: OpenDiffOptions): Promise<void>;
   close(): Promise<void>;
-  toggle(): Promise<void>;
+  toggle(options?: OpenDiffOptions): Promise<void>;
   toggleLayout(): Promise<void>;
 }

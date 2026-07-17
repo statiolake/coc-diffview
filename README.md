@@ -42,7 +42,8 @@ The `coc-diffview.open` command accepts the same options object. Use
 - `coc-diffview.toggleLayout` switches the active diff between unified and
   side-by-side layouts.
 - `coc-diffview.toggle` switches between the diff and the normal modified
-  buffer. It reopens the most recent diff when invoked again.
+  buffer. It accepts optional diff options, allowing a provider to toggle the
+  diff associated with the current buffer rather than only the latest input.
 
 Unified added, removed, and changed lines use `CocDiffviewAdded`,
 `CocDiffviewRemoved`, and `CocDiffviewChanged`. They default to `DiffAdd`,
