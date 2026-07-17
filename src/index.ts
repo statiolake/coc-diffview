@@ -399,9 +399,9 @@ class Diffview implements CocDiffviewApi, Disposable {
       ["CocDiffviewAdded", "DiffAdd"],
       ["CocDiffviewRemoved", "DiffDelete"],
       ["CocDiffviewChanged", "DiffChange"],
-      ["CocDiffviewAddedSign", "DiffAdd"],
-      ["CocDiffviewChangedSign", "DiffChange"],
-      ["CocDiffviewRemovedSign", "DiffDelete"],
+      ["CocDiffviewAddedSign", "Added"],
+      ["CocDiffviewChangedSign", "Changed"],
+      ["CocDiffviewRemovedSign", "Removed"],
     ]) {
       await workspace.nvim.command(`highlight default link ${group} ${target}`);
     }
