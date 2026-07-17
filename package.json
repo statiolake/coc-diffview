@@ -27,6 +27,14 @@
       {
         "command": "coc-diffview.close",
         "title": "Close File Diff"
+      },
+      {
+        "command": "coc-diffview.toggle",
+        "title": "Toggle File Diff"
+      },
+      {
+        "command": "coc-diffview.toggleLayout",
+        "title": "Toggle Unified and Side-by-Side Diff"
       }
     ],
     "configuration": {

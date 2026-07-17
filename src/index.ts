@@ -32,6 +32,8 @@ export type OpenDiffOptions = {
 export interface CocDiffviewApi {
   open(options: OpenDiffOptions): Promise<void>;
   close(): Promise<void>;
+  toggle(): Promise<void>;
+  toggleLayout(): Promise<void>;
 }
 
 type SessionBase = {
@@ -58,6 +60,7 @@ type DiffSession = SplitSession | UnifiedSession;
 
 class Diffview implements CocDiffviewApi, Disposable {
   private session: DiffSession | undefined;
+  private lastOptions: OpenDiffOptions | undefined;
   private nextBufferId = 1;
 
   constructor(context: ExtensionContext) {
@@ -68,10 +71,15 @@ class Diffview implements CocDiffviewApi, Disposable {
         (options: OpenDiffOptions) => this.open(options),
       ),
       commands.registerCommand("coc-diffview.close", () => this.close()),
+      commands.registerCommand("coc-diffview.toggle", () => this.toggle()),
+      commands.registerCommand("coc-diffview.toggleLayout", () =>
+        this.toggleLayout(),
+      ),
       events.on("TextChanged", (bufnr) => this.scheduleRender(bufnr)),
       events.on("TextChangedI", (bufnr) => this.scheduleRender(bufnr)),
       events.on("TextChangedP", (bufnr) => this.scheduleRender(bufnr)),
     );
+    void this.defineHighlights();
   }
 
   dispose(): void {
@@ -83,6 +91,7 @@ class Diffview implements CocDiffviewApi, Disposable {
 
   async open(options: OpenDiffOptions): Promise<void> {
     validateOptions(options);
+    this.lastOptions = options;
     const layout =
       options.layout ??
       workspace
@@ -127,6 +136,25 @@ class Diffview implements CocDiffviewApi, Disposable {
       if (await bufferIsValid(buffer))
         await workspace.nvim.call("nvim_buf_delete", [buffer, { force: true }]);
     }
+  }
+
+  async toggle(): Promise<void> {
+    if (this.session) {
+      await this.close();
+      return;
+    }
+    if (!this.lastOptions) return;
+    await this.open(this.lastOptions);
+  }
+
+  async toggleLayout(): Promise<void> {
+    const options = this.lastOptions;
+    if (!options) return;
+    const current = this.session?.kind ?? options.layout ?? "unified";
+    await this.open({
+      ...options,
+      layout: current === "unified" ? "split" : "unified",
+    });
   }
 
   private async openUnified(options: OpenDiffOptions): Promise<void> {
@@ -342,7 +370,9 @@ class Diffview implements CocDiffviewApi, Disposable {
         ]);
       }
       if (change.added.length) {
-        const highlight = change.removed.length ? "Changed" : "Added";
+        const highlight = change.removed.length
+          ? "CocDiffviewChanged"
+          : "CocDiffviewAdded";
         for (
           let row = change.newStart;
           row < change.newStart + change.added.length;
@@ -353,10 +383,27 @@ class Diffview implements CocDiffviewApi, Disposable {
             session.namespace,
             row,
             0,
-            { sign_text: "┃", sign_hl_group: highlight },
+            {
+              sign_text: "┃",
+              sign_hl_group: `${highlight}Sign`,
+              line_hl_group: highlight,
+            },
           ]);
         }
       }
+    }
+  }
+
+  private async defineHighlights(): Promise<void> {
+    for (const [group, target] of [
+      ["CocDiffviewAdded", "DiffAdd"],
+      ["CocDiffviewRemoved", "DiffDelete"],
+      ["CocDiffviewChanged", "DiffChange"],
+      ["CocDiffviewAddedSign", "DiffAdd"],
+      ["CocDiffviewChangedSign", "DiffChange"],
+      ["CocDiffviewRemovedSign", "DiffDelete"],
+    ]) {
+      await workspace.nvim.command(`highlight default link ${group} ${target}`);
     }
   }
 
@@ -387,8 +434,8 @@ function removedVirtualLine(
 ): Array<[string, string]> {
   return [
     [" ".repeat(Math.max(0, textOffset - 1)), "Normal"],
-    ["┃", "Removed"],
-    [line, "Normal"],
+    ["┃", "CocDiffviewRemovedSign"],
+    [line, "CocDiffviewRemoved"],
   ];
 }
 
