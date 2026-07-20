@@ -1,6 +1,6 @@
 {
   "name": "@statiolake/coc-diffview",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Editable unified and side-by-side diff UI for coc.nvim",
   "author": "statiolake",
   "license": "MIT",
@@ -21,19 +21,19 @@
   "contributes": {
     "commands": [
       {
-        "command": "coc-diffview.open",
+        "command": "diffview.open",
         "title": "Open Diff"
       },
       {
-        "command": "coc-diffview.close",
+        "command": "diffview.close",
         "title": "Close File Diff"
       },
       {
-        "command": "coc-diffview.toggle",
+        "command": "diffview.toggle",
         "title": "Toggle File Diff"
       },
       {
-        "command": "coc-diffview.toggleLayout",
+        "command": "diffview.toggleLayout",
         "title": "Toggle Unified and Side-by-Side Diff"
       }
     ],
@@ -41,9 +41,12 @@
       "type": "object",
       "title": "Coc Diffview",
       "properties": {
-        "coc-diffview.layout": {
+        "diffview.layout": {
           "type": "string",
-          "enum": ["unified", "split"],
+          "enum": [
+            "unified",
+            "split"
+          ],
           "default": "unified",
           "description": "Default file diff layout."
         }
@@ -58,7 +61,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/statiolake/coc-diffview.git"
+    "url": "git+https://github.com/statiolake/diffview.git"
   },
   "bugs": {
     "url": "https://github.com/statiolake/coc-diffview/issues"

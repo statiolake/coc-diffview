@@ -36,12 +36,12 @@ Both sources accept `{ kind: "buffer", buffer }` or
 `{ kind: "text", text, label, filetype? }`. A text modified source is an
 editable scratch buffer; a buffer modified source edits the real document.
 
-The `coc-diffview.open` command accepts the same options object. Use
-`coc-diffview.close` to remove the active diff session.
+The `diffview.open` command accepts the same options object. Use
+`diffview.close` to remove the active diff session.
 
-- `coc-diffview.toggleLayout` switches the active diff between unified and
+- `diffview.toggleLayout` switches the active diff between unified and
   side-by-side layouts.
-- `coc-diffview.toggle` switches between the diff and the normal modified
+- `diffview.toggle` switches between the diff and the normal modified
   buffer. It accepts optional diff options, allowing a provider to toggle the
   diff associated with the current buffer rather than only the latest input.
 

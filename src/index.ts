@@ -68,14 +68,14 @@ class Diffview implements CocDiffviewApi, Disposable {
     context.subscriptions.push(
       this,
       commands.registerCommand(
-        "coc-diffview.open",
+        "diffview.open",
         (options: OpenDiffOptions) => this.open(options),
       ),
-      commands.registerCommand("coc-diffview.close", () => this.close()),
-      commands.registerCommand("coc-diffview.toggle", (options?: OpenDiffOptions) =>
+      commands.registerCommand("diffview.close", () => this.close()),
+      commands.registerCommand("diffview.toggle", (options?: OpenDiffOptions) =>
         this.toggle(options),
       ),
-      commands.registerCommand("coc-diffview.toggleLayout", () =>
+      commands.registerCommand("diffview.toggleLayout", () =>
         this.toggleLayout(),
       ),
       events.on("TextChanged", (bufnr) => this.scheduleRender(bufnr)),
@@ -98,7 +98,7 @@ class Diffview implements CocDiffviewApi, Disposable {
     const layout =
       options.layout ??
       workspace
-        .getConfiguration("coc-diffview")
+        .getConfiguration("diffview")
         .get<DiffLayout>("layout", "unified");
     if (layout === "split") await this.openSplit(options);
     else await this.openUnified(options);
@@ -434,7 +434,7 @@ class Diffview implements CocDiffviewApi, Disposable {
 
 function validateOptions(options: OpenDiffOptions): void {
   if (!options?.original || !options.modified)
-    throw new Error("coc-diffview.open requires original and modified sources");
+    throw new Error("diffview.open requires original and modified sources");
 }
 
 function sameSource(left: DiffSource, right: DiffSource): boolean {
