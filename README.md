@@ -44,6 +44,8 @@ The `diffview.open` command accepts the same options object. Use
 - `diffview.toggle` switches between the diff and the normal modified
   buffer. It accepts optional diff options, allowing a provider to toggle the
   diff associated with the current buffer rather than only the latest input.
+- `]c` and `[c` move to the next and previous diff hunk in both unified and
+  side-by-side layouts. Existing buffer-local mappings are preserved.
 
 Unified added, removed, and changed lines use `CocDiffviewAdded`,
 `CocDiffviewRemoved`, and `CocDiffviewChanged`. They default to `DiffAdd`,

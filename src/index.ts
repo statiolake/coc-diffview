@@ -38,6 +38,7 @@ export interface CocDiffviewApi {
 
 type SessionBase = {
   createdBuffers: number[];
+  mappedBuffers: number[];
   options: OpenDiffOptions;
 };
 
@@ -53,6 +54,7 @@ type UnifiedSession = SessionBase & {
   buffer: number;
   namespace: number;
   originalLines: string[];
+  hunkRows: number[];
   signColumn: string;
   refreshTimer?: NodeJS.Timeout;
 };
@@ -78,6 +80,12 @@ class Diffview implements CocDiffviewApi, Disposable {
       commands.registerCommand("diffview.toggleLayout", () =>
         this.toggleLayout(),
       ),
+      commands.registerCommand("diffview.nextChange", () =>
+        this.navigateChange(1),
+      ),
+      commands.registerCommand("diffview.previousChange", () =>
+        this.navigateChange(-1),
+      ),
       events.on("TextChanged", (bufnr) => this.scheduleRender(bufnr)),
       events.on("TextChangedI", (bufnr) => this.scheduleRender(bufnr)),
       events.on("TextChangedP", (bufnr) => this.scheduleRender(bufnr)),
@@ -88,6 +96,7 @@ class Diffview implements CocDiffviewApi, Disposable {
   dispose(): void {
     const session = this.session;
     this.session = undefined;
+    if (session) void this.removeNavigationMappings(session);
     if (session?.kind === "unified" && session.refreshTimer)
       clearTimeout(session.refreshTimer);
   }
@@ -108,6 +117,7 @@ class Diffview implements CocDiffviewApi, Disposable {
     const session = this.session;
     if (!session) return;
     this.session = undefined;
+    await this.removeNavigationMappings(session);
     if (session.kind === "unified") {
       if (session.refreshTimer) clearTimeout(session.refreshTimer);
       if (await bufferIsValid(session.buffer)) {
@@ -191,10 +201,13 @@ class Diffview implements CocDiffviewApi, Disposable {
       buffer,
       namespace,
       originalLines,
+      hunkRows: [],
       signColumn,
       createdBuffers,
+      mappedBuffers: [],
       options,
     };
+    await this.installNavigationMappings(this.session, [buffer]);
     await this.renderUnified(this.session);
   }
 
@@ -204,7 +217,7 @@ class Diffview implements CocDiffviewApi, Disposable {
     if (!editor) return;
     const createdBuffers: number[] = [];
     await workspace.nvim.call("win_gotoid", [editor]);
-    await this.openModified(options.modified, createdBuffers);
+    const modified = await this.openModified(options.modified, createdBuffers);
     const rightWindow = (await workspace.nvim.call("win_getid")) as number;
     await workspace.nvim.command("leftabove vsplit");
     const leftWindow = (await workspace.nvim.call("win_getid")) as number;
@@ -225,8 +238,10 @@ class Diffview implements CocDiffviewApi, Disposable {
       leftWindow,
       rightWindow,
       createdBuffers,
+      mappedBuffers: [],
       options,
     };
+    await this.installNavigationMappings(this.session, [original, modified]);
   }
 
   private async openModified(
@@ -360,7 +375,11 @@ class Diffview implements CocDiffviewApi, Disposable {
       session.window,
     ])) as Array<{ textoff: number }>;
     const textOffset = windowInfo[0]?.textoff ?? 0;
-    for (const change of lineChanges(session.originalLines, current)) {
+    const changes = lineChanges(session.originalLines, current);
+    session.hunkRows = changes.map((change) =>
+      Math.min(change.newStart, Math.max(0, current.length - 1)),
+    );
+    for (const change of changes) {
       if (change.removed.length) {
         const atEnd = change.newStart >= current.length;
         const row = atEnd ? Math.max(0, current.length - 1) : change.newStart;
@@ -399,6 +418,54 @@ class Diffview implements CocDiffviewApi, Disposable {
             },
           ]);
         }
+      }
+    }
+  }
+
+  private async navigateChange(direction: -1 | 1): Promise<void> {
+    const session = this.session;
+    if (!session) return;
+    if (session.kind === "split") {
+      await workspace.nvim.command(`normal! ${direction > 0 ? "]c" : "[c"}`);
+      return;
+    }
+    const window = (await workspace.nvim.call("win_getid")) as number;
+    if (window !== session.window || !session.hunkRows.length) return;
+    const cursor = (await workspace.nvim.call("nvim_win_get_cursor", [window])) as [number, number];
+    const currentRow = cursor[0] - 1;
+    const target = direction > 0
+      ? session.hunkRows.find((row) => row > currentRow)
+      : [...session.hunkRows].reverse().find((row) => row < currentRow);
+    if (target === undefined) return;
+    await workspace.nvim.call("nvim_win_set_cursor", [window, [target + 1, 0]]);
+  }
+
+  private async installNavigationMappings(
+    session: DiffSession,
+    buffers: number[],
+  ): Promise<void> {
+    for (const buffer of new Set(buffers)) {
+      const mappings = (await workspace.nvim.call("nvim_buf_get_keymap", [buffer, "n"])) as Array<{ lhs: string }>;
+      for (const [key, command] of [["]c", "diffview.nextChange"], ["[c", "diffview.previousChange"]]) {
+        if (mappings.some((mapping) => mapping.lhs === key)) continue;
+        await workspace.nvim.call("nvim_buf_set_keymap", [buffer, "n", key, `<Cmd>CocCommand ${command}<CR>`, {
+          noremap: true,
+          silent: true,
+          nowait: true,
+        }]);
+      }
+      session.mappedBuffers.push(buffer);
+    }
+  }
+
+  private async removeNavigationMappings(session: DiffSession): Promise<void> {
+    for (const buffer of session.mappedBuffers) {
+      if (!(await bufferIsValid(buffer))) continue;
+      const mappings = (await workspace.nvim.call("nvim_buf_get_keymap", [buffer, "n"])) as Array<{ lhs: string; rhs?: string }>;
+      for (const [key, command] of [["]c", "diffview.nextChange"], ["[c", "diffview.previousChange"]]) {
+        const mapping = mappings.find((candidate) => candidate.lhs === key);
+        if (mapping?.rhs !== `<Cmd>CocCommand ${command}<CR>`) continue;
+        await workspace.nvim.call("nvim_buf_del_keymap", [buffer, "n", key]);
       }
     }
   }

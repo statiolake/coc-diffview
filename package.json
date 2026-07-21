@@ -35,6 +35,14 @@
       {
         "command": "diffview.toggleLayout",
         "title": "Toggle Unified and Side-by-Side Diff"
+      },
+      {
+        "command": "diffview.nextChange",
+        "title": "Go to Next Diff Hunk"
+      },
+      {
+        "command": "diffview.previousChange",
+        "title": "Go to Previous Diff Hunk"
       }
     ],
     "configuration": {
