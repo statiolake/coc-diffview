@@ -37,13 +37,14 @@ Both sources accept `{ kind: "buffer", buffer }` or
 editable scratch buffer; a buffer modified source edits the real document.
 
 The `diffview.open` command accepts the same options object. Use
-`diffview.close` to remove the active diff session.
+`diffview.close` to remove the active diff session and restore the editor that
+was present before opening it.
 
 - `diffview.toggleLayout` switches the active diff between unified and
   side-by-side layouts.
-- `diffview.toggle` switches between the diff and the normal modified
-  buffer. It accepts optional diff options, allowing a provider to toggle the
-  diff associated with the current buffer rather than only the latest input.
+- `diffview.closeDiffAndOpenFile` closes a diff whose modified source is a real
+  file buffer and opens that file. Text/text diffs such as repository history
+  comparisons deliberately cannot perform this operation.
 - `]c` and `[c` move to the next and previous diff hunk in both unified and
   side-by-side layouts. Existing buffer-local mappings are preserved.
 

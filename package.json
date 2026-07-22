@@ -29,8 +29,8 @@
         "title": "Close File Diff"
       },
       {
-        "command": "diffview.toggle",
-        "title": "Toggle File Diff"
+        "command": "diffview.closeDiffAndOpenFile",
+        "title": "Close Diff and Open Modified File"
       },
       {
         "command": "diffview.toggleLayout",

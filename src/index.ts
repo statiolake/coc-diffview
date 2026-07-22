@@ -32,6 +32,8 @@ export type OpenDiffOptions = {
 export interface CocDiffviewApi {
   open(options: OpenDiffOptions): Promise<void>;
   close(): Promise<void>;
+  closeDiffAndOpenFile(): Promise<void>;
+  /** @deprecated Providers should expose an explicit open/close workflow. */
   toggle(options?: OpenDiffOptions): Promise<void>;
   toggleLayout(): Promise<void>;
 }
@@ -39,6 +41,8 @@ export interface CocDiffviewApi {
 type SessionBase = {
   createdBuffers: number[];
   mappedBuffers: number[];
+  returnWindow: number;
+  returnBuffer: number;
   options: OpenDiffOptions;
 };
 
@@ -74,8 +78,8 @@ class Diffview implements CocDiffviewApi, Disposable {
         (options: OpenDiffOptions) => this.open(options),
       ),
       commands.registerCommand("diffview.close", () => this.close()),
-      commands.registerCommand("diffview.toggle", (options?: OpenDiffOptions) =>
-        this.toggle(options),
+      commands.registerCommand("diffview.closeDiffAndOpenFile", () =>
+        this.closeDiffAndOpenFile(),
       ),
       commands.registerCommand("diffview.toggleLayout", () =>
         this.toggleLayout(),
@@ -116,6 +120,19 @@ class Diffview implements CocDiffviewApi, Disposable {
   async close(): Promise<void> {
     const session = this.session;
     if (!session) return;
+    await this.closeSession(session, session.returnBuffer);
+  }
+
+  async closeDiffAndOpenFile(): Promise<void> {
+    const session = this.session;
+    if (!session || session.options.modified.kind !== "buffer") return;
+    const target = session.options.modified.buffer;
+    if (!(await bufferIsFile(target))) return;
+    await this.closeSession(session, target);
+  }
+
+  private async closeSession(session: DiffSession, targetBuffer: number): Promise<void> {
+    if (this.session !== session) return;
     this.session = undefined;
     await this.removeNavigationMappings(session);
     if (session.kind === "unified") {
@@ -145,6 +162,10 @@ class Diffview implements CocDiffviewApi, Disposable {
       if (await windowIsValid(session.leftWindow))
         await workspace.nvim.call("nvim_win_close", [session.leftWindow, true]);
     }
+    if (await windowIsValid(session.returnWindow) && await bufferIsValid(targetBuffer)) {
+      await workspace.nvim.call("nvim_win_set_buf", [session.returnWindow, targetBuffer]);
+      await workspace.nvim.call("win_gotoid", [session.returnWindow]);
+    }
     for (const buffer of session.createdBuffers) {
       if (await bufferIsValid(buffer))
         await workspace.nvim.call("nvim_buf_delete", [buffer, { force: true }]);
@@ -156,7 +177,8 @@ class Diffview implements CocDiffviewApi, Disposable {
       this.session &&
       (!options || sameSource(this.session.options.modified, options.modified))
     ) {
-      await this.close();
+      if (this.session.options.modified.kind === "text") return;
+      await this.closeDiffAndOpenFile();
       return;
     }
     const target = options ?? this.lastOptions;
@@ -181,6 +203,7 @@ class Diffview implements CocDiffviewApi, Disposable {
     if (!editor) return;
     const createdBuffers: number[] = [];
     await workspace.nvim.call("win_gotoid", [editor]);
+    const returnBuffer = (await workspace.nvim.call("nvim_win_get_buf", [editor])) as number;
     const buffer = await this.openModified(options.modified, createdBuffers);
     const windowId = (await workspace.nvim.call("win_getid")) as number;
     const signColumn = (await workspace.nvim.call("nvim_get_option_value", [
@@ -205,6 +228,8 @@ class Diffview implements CocDiffviewApi, Disposable {
       signColumn,
       createdBuffers,
       mappedBuffers: [],
+      returnWindow: editor,
+      returnBuffer,
       options,
     };
     await this.installNavigationMappings(this.session, [buffer]);
@@ -217,6 +242,7 @@ class Diffview implements CocDiffviewApi, Disposable {
     if (!editor) return;
     const createdBuffers: number[] = [];
     await workspace.nvim.call("win_gotoid", [editor]);
+    const returnBuffer = (await workspace.nvim.call("nvim_win_get_buf", [editor])) as number;
     const modified = await this.openModified(options.modified, createdBuffers);
     const rightWindow = (await workspace.nvim.call("win_getid")) as number;
     await workspace.nvim.command("leftabove vsplit");
@@ -239,6 +265,8 @@ class Diffview implements CocDiffviewApi, Disposable {
       rightWindow,
       createdBuffers,
       mappedBuffers: [],
+      returnWindow: editor,
+      returnBuffer,
       options,
     };
     await this.installNavigationMappings(this.session, [original, modified]);
@@ -530,6 +558,16 @@ function splitLines(contents: string): string[] {
 
 async function bufferIsValid(buffer: number): Promise<boolean> {
   return (await workspace.nvim.call("nvim_buf_is_valid", [buffer])) as boolean;
+}
+
+async function bufferIsFile(buffer: number): Promise<boolean> {
+  if (!(await bufferIsValid(buffer))) return false;
+  const type = (await workspace.nvim.call("nvim_get_option_value", [
+    "buftype",
+    { buf: buffer },
+  ])) as string;
+  const name = (await workspace.nvim.call("nvim_buf_get_name", [buffer])) as string;
+  return type === "" && name.length > 0;
 }
 
 async function windowIsValid(window: number): Promise<boolean> {
